@@ -31,7 +31,7 @@ else:
 # --- 3. COLUMN SELECTION ---
 # Adjust these strings if your CSV headers are different
 ID_COL = "Application Number" 
-TYPE_COL = "Application Type"
+TYPE_COL = "Application Type (ID)"
 
 if ID_COL not in df.columns or TYPE_COL not in df.columns:
     st.error(f"Column Name Error! Found: {list(df.columns)}")
