@@ -3,13 +3,11 @@ import pandas as pd
 import os
 
 # --- 1. PAGE CONFIG ---
-st.set_page_config(page_title="Application Duplicate Checker", layout="wide")
+st.set_page_config(page_title="Application Duplicate Tracker", layout="wide")
 
 st.title("📋 Application Duplicate Checker")
-st.markdown("This app analyzes your CSV for duplicate application numbers grouped by type.")
 
 # --- 2. DATA LOADING LOGIC ---
-# This looks for 'data.csv' in your GitHub folder first
 FILENAME = "data.csv" 
 
 @st.cache_data
@@ -19,26 +17,30 @@ def process_data(file):
 # Check if file exists in the GitHub repo
 if os.path.exists(FILENAME):
     df = process_data(FILENAME)
-    st.success(f"✅ Loaded `{FILENAME}` from GitHub repository.")
 else:
-    st.warning(f"⚠️ `{FILENAME}` not found in GitHub. Please upload it manually below.")
+    st.warning(f"⚠️ `{FILENAME}` not found in GitHub. Please upload it manually.")
     uploaded_file = st.file_uploader("Upload your CSV file", type="csv")
     if uploaded_file:
         df = process_data(uploaded_file)
     else:
-        st.stop() # Stops the app until a file is provided
+        st.stop()
 
-# --- 3. COLUMN SELECTION ---
-# Adjust these strings if your CSV headers are different
+# --- 3. COLUMN DEFINITIONS ---
 ID_COL = "Application Number" 
-TYPE_COL = "Application Type (ID)"
+TYPE_COL = "Application Type(ID)"
+TITLE_COL = "Title" # Assuming the column name is 'Title'
 
+# Verification
 if ID_COL not in df.columns or TYPE_COL not in df.columns:
-    st.error(f"Column Name Error! Found: {list(df.columns)}")
-    st.info(f"Make sure your columns are named exactly '{ID_COL}' and '{TYPE_COL}'.")
+    st.error(f"Column Name Error! Make sure columns are named '{ID_COL}' and '{TYPE_COL}'.")
     st.stop()
 
-# --- 4. TOP-LEVEL METRICS ---
+# --- 4. DATA CLEANING (Removing 0 and raw from the Type) ---
+# Filter to keep only types 1-5 (assuming they are numeric or strings "1"-"5")
+# We remove anything that is exactly 0 or "raw"
+df = df[~df[TYPE_COL].astype(str).str.lower().isin(['0', 'raw'])]
+
+# --- 5. TOP-LEVEL METRICS ---
 total_apps = len(df)
 unique_apps = df[ID_COL].nunique()
 duplicate_count = total_apps - unique_apps
@@ -48,35 +50,40 @@ col1.metric("Total Applications", f"{total_apps:,}")
 col2.metric("Unique Applications", f"{unique_apps:,}")
 col3.metric("Duplicate Entries", f"{duplicate_count:,}")
 
-# --- 5. BREAKDOWN BY TYPE ---
-st.subheader("📊 Statistics by Application Type")
+st.divider()
 
-# Calculate stats per category
+# --- 6. BREAKDOWN BY TYPE (Table 1) ---
+st.subheader("📊 Statistics by Application Type (1-5)")
+
 stats = df.groupby(TYPE_COL)[ID_COL].agg(['count', 'nunique']).reset_index()
 stats['Duplicates'] = stats['count'] - stats['nunique']
-stats.columns = ["Application Type", "Total Apps", "Unique Apps", "Duplicate Apps"]
+stats.columns = [TYPE_COL, "Total Apps", "Unique Apps", "Duplicate Apps"]
 
-# Display table
-st.dataframe(stats.sort_values(by="Duplicate Apps", ascending=False), use_container_width=True)
+# Display table WITHOUT the index (the 0-5 sequence numbers)
+st.dataframe(stats.sort_values(by=TYPE_COL), hide_index=True, use_container_width=True)
 
-# --- 6. DETAILED DUPLICATE LIST ---
+# --- 7. DETAILED INSPECTION (Limited Columns) ---
 st.divider()
-st.subheader("🔍 Inspection: See Duplicate Application Numbers")
+st.subheader("🔍 Inspection: Duplicate Application Details")
 
-# Filter logic: show only actual duplicates
+# Filter for duplicates
 dupe_filter = df[df.duplicated(subset=[ID_COL], keep=False)]
 
-category_list = ["All Types"] + list(df[TYPE_COL].unique())
+category_list = ["All Types"] + sorted(list(df[TYPE_COL].unique().astype(str)))
 selected_cat = st.selectbox("Filter duplicates by Application Type:", category_list)
 
 if selected_cat != "All Types":
-    display_df = dupe_filter[dupe_filter[TYPE_COL] == selected_cat]
+    display_df = dupe_filter[dupe_filter[TYPE_COL].astype(str) == selected_cat]
 else:
     display_df = dupe_filter
 
 if not display_df.empty:
-    st.write(f"Showing {len(display_df):,} duplicate records:")
-    # We sort by ID so duplicates appear next to each other
-    st.dataframe(display_df.sort_values(by=ID_COL), use_container_width=True)
+    st.write(f"Showing duplicate records (Application Number and Title only):")
+    
+    # Strictly show only the Application Number and Title columns
+    # We use sort_values so the duplicates appear right next to each other
+    final_view = display_df[[ID_COL, TITLE_COL]].sort_values(by=ID_COL)
+    
+    st.dataframe(final_view, hide_index=True, use_container_width=True)
 else:
     st.success("No duplicates found for this selection!")
