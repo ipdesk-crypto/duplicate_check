@@ -1,84 +1,82 @@
 import streamlit as st
 import pandas as pd
+import os
 
-# 1. SETUP & CONFIG
-st.set_page_config(page_title="App Duplicate Tracker", layout="wide")
+# --- 1. PAGE CONFIG ---
+st.set_page_config(page_title="Application Duplicate Checker", layout="wide")
 
-# IMPORTANT: Ensure this is the RAW link (Right-click "Raw" button on GitHub -> Copy Link Address)
-# It should start with 'https://raw.githubusercontent.com/...'
-GITHUB_CSV_URL = "https://raw.githubusercontent.com/YourUsername/YourRepo/main/YourFile.csv"
+st.title("📋 Application Duplicate Checker")
+st.markdown("This app analyzes your CSV for duplicate application numbers grouped by type.")
 
-# 2. LOAD DATA (With Caching for Large Files)
-@st.cache_data(show_spinner="Downloading large dataset from GitHub...")
-def load_data(url):
-    try:
-        # low_memory=False handles large files better
-        # on_bad_lines='skip' prevents crashes if a row is corrupted
-        return pd.read_csv(url, low_memory=False, on_bad_lines='skip')
-    except Exception as e:
-        st.error(f"❌ Error loading CSV: {e}")
-        return None
+# --- 2. DATA LOADING LOGIC ---
+# This looks for 'data.csv' in your GitHub folder first
+FILENAME = "data.csv" 
 
-df = load_data(GITHUB_CSV_URL)
+@st.cache_data
+def process_data(file):
+    return pd.read_csv(file, low_memory=False)
 
-# 3. APP LOGIC
-if df is not None:
-    st.title("📋 Application Duplicate Checker")
-    
-    # --- DYNAMIC COLUMN SELECTION ---
-    # This prevents errors if your CSV headers change slightly
-    st.sidebar.header("Column Settings")
-    all_columns = df.columns.tolist()
-    
-    id_col = st.sidebar.selectbox("Select ID Column (Application Number):", all_columns, 
-                                 index=0 if "Application Number" not in all_columns else all_columns.index("Application Number"))
-    
-    type_col = st.sidebar.selectbox("Select Category Column (Application Type):", all_columns, 
-                                   index=1 if "Application Type" not in all_columns else all_columns.index("Application Type"))
-
-    # --- TOP LEVEL METRICS ---
-    total_apps = len(df)
-    total_unique = df[id_col].nunique()
-    total_dupes = total_apps - total_unique
-
-    m1, m2, m3 = st.columns(3)
-    m1.metric("Total Rows", f"{total_apps:,}")
-    m2.metric("Unique Applications", f"{total_unique:,}")
-    m3.metric("Duplicates Found", f"{total_dupes:,}", delta_color="inverse")
-
-    st.divider()
-
-    # --- CATEGORY BREAKDOWN ---
-    st.subheader("📊 Breakdown by Type")
-    
-    # Grouping logic
-    stats = df.groupby(type_col)[id_col].agg(['count', 'nunique']).reset_index()
-    stats['duplicates'] = stats['count'] - stats['nunique']
-    stats.columns = ["Application Type", "Total Count", "Unique Count", "Duplicate Count"]
-    
-    # Show the table
-    st.dataframe(stats.sort_values(by="Duplicate Count", ascending=False), use_container_width=True)
-
-    # --- DRILL DOWN: SEE THE NUMBERS ---
-    st.divider()
-    st.subheader("🔍 Inspection Tool")
-    
-    show_only_dupes = st.checkbox("Show ONLY rows that are duplicates", value=True)
-    
-    selected_type = st.selectbox("Filter by Type:", ["All"] + list(stats["Application Type"].unique()))
-
-    # Filter logic
-    display_df = df.copy()
-    if selected_type != "All":
-        display_df = display_df[display_df[type_col] == selected_type]
-    
-    if show_only_dupes:
-        # Finds all instances of IDs that appear more than once
-        display_df = display_df[display_df.duplicated(subset=[id_col], keep=False)]
-
-    st.write(f"Showing **{len(display_df):,}** entries:")
-    st.dataframe(display_df.sort_values(by=id_col), use_container_width=True)
-
+# Check if file exists in the GitHub repo
+if os.path.exists(FILENAME):
+    df = process_data(FILENAME)
+    st.success(f"✅ Loaded `{FILENAME}` from GitHub repository.")
 else:
-    st.warning("⚠️ Waiting for data... Please check your GitHub URL in the code.")
+    st.warning(f"⚠️ `{FILENAME}` not found in GitHub. Please upload it manually below.")
+    uploaded_file = st.file_uploader("Upload your CSV file", type="csv")
+    if uploaded_file:
+        df = process_data(uploaded_file)
+    else:
+        st.stop() # Stops the app until a file is provided
 
+# --- 3. COLUMN SELECTION ---
+# Adjust these strings if your CSV headers are different
+ID_COL = "Application Number" 
+TYPE_COL = "Application Type"
+
+if ID_COL not in df.columns or TYPE_COL not in df.columns:
+    st.error(f"Column Name Error! Found: {list(df.columns)}")
+    st.info(f"Make sure your columns are named exactly '{ID_COL}' and '{TYPE_COL}'.")
+    st.stop()
+
+# --- 4. TOP-LEVEL METRICS ---
+total_apps = len(df)
+unique_apps = df[ID_COL].nunique()
+duplicate_count = total_apps - unique_apps
+
+col1, col2, col3 = st.columns(3)
+col1.metric("Total Applications", f"{total_apps:,}")
+col2.metric("Unique Applications", f"{unique_apps:,}")
+col3.metric("Duplicate Entries", f"{duplicate_count:,}")
+
+# --- 5. BREAKDOWN BY TYPE ---
+st.subheader("📊 Statistics by Application Type")
+
+# Calculate stats per category
+stats = df.groupby(TYPE_COL)[ID_COL].agg(['count', 'nunique']).reset_index()
+stats['Duplicates'] = stats['count'] - stats['nunique']
+stats.columns = ["Application Type", "Total Apps", "Unique Apps", "Duplicate Apps"]
+
+# Display table
+st.dataframe(stats.sort_values(by="Duplicate Apps", ascending=False), use_container_width=True)
+
+# --- 6. DETAILED DUPLICATE LIST ---
+st.divider()
+st.subheader("🔍 Inspection: See Duplicate Application Numbers")
+
+# Filter logic: show only actual duplicates
+dupe_filter = df[df.duplicated(subset=[ID_COL], keep=False)]
+
+category_list = ["All Types"] + list(df[TYPE_COL].unique())
+selected_cat = st.selectbox("Filter duplicates by Application Type:", category_list)
+
+if selected_cat != "All Types":
+    display_df = dupe_filter[dupe_filter[TYPE_COL] == selected_cat]
+else:
+    display_df = dupe_filter
+
+if not display_df.empty:
+    st.write(f"Showing {len(display_df):,} duplicate records:")
+    # We sort by ID so duplicates appear next to each other
+    st.dataframe(display_df.sort_values(by=ID_COL), use_container_width=True)
+else:
+    st.success("No duplicates found for this selection!")
