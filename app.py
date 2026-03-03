@@ -35,7 +35,7 @@ if df is not None:
         return None
 
     ID_COL = get_col_name("Application Number", df.columns)
-    TYPE_COL = get_col_name("Application Type (ID) df.columns)
+    TYPE_COL = get_col_name("Application Type (ID)", df.columns)
     TITLE_COL = get_col_name("Title in English", df.columns)
 
     # Safety Stop if columns are completely missing
