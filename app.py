@@ -5,7 +5,6 @@ import os
 # --- 1. PAGE CONFIG ---
 st.set_page_config(page_title="Application Duplicate Tracker", layout="wide")
 
-# The file name you pushed via GitHub Desktop
 FILENAME = "data.csv" 
 
 st.title("📋 Application Duplicate Checker")
@@ -14,33 +13,42 @@ st.title("📋 Application Duplicate Checker")
 @st.cache_data
 def load_data(file_path):
     if os.path.exists(file_path):
+        # We read the file and immediately clean the headers
         data = pd.read_csv(file_path, low_memory=False)
-        # CLEANING STEP: Remove hidden spaces from column headers to prevent KeyErrors
-        data.columns = data.columns.str.strip()
+        # Clean white space and ensure consistent naming
+        data.columns = [str(col).strip() for col in data.columns]
         return data
-    else:
-        return None
+    return None
 
 df = load_data(FILENAME)
 
 if df is not None:
-    # --- 3. COLUMN DEFINITIONS ---
-    # These must match your CSV exactly (now stripped of hidden spaces)
-    ID_COL = "Application Number" 
-    TYPE_COL = "Application Type(ID)"
-    TITLE_COL = "Title"
+    # --- 3. DYNAMIC COLUMN MAPPING ---
+    # This prevents the KeyError by searching for the best match if exact match fails
+    def get_col_name(target, columns):
+        if target in columns:
+            return target
+        # Fallback: look for a column that starts with or contains the name
+        for col in columns:
+            if target.lower() in col.lower():
+                return col
+        return None
 
-    # Safety check: if the columns still aren't found, show the user what WAS found
-    if TYPE_COL not in df.columns:
-        st.error(f"Could not find column '{TYPE_COL}'")
-        st.write("Columns found in your file:", list(df.columns))
+    ID_COL = get_col_name("Application Number", df.columns)
+    TYPE_COL = get_col_name("Application Type(ID)", df.columns)
+    TITLE_COL = get_col_name("Title", df.columns)
+
+    # Safety Stop if columns are completely missing
+    if not ID_COL or not TYPE_COL:
+        st.error("⚠️ Column Mapping Error")
+        st.write("Could not find 'Application Number' or 'Application Type(ID)'")
+        st.write("Actual Columns in CSV:", list(df.columns))
         st.stop()
 
     # --- 4. DATA CLEANING ---
-    # Ensure Type is a string, then remove rows where it's '0' or 'raw'
-    df[TYPE_COL] = df[TYPE_COL].astype(str)
-    # Filter to keep only the clean types you want
-    df = df[~df[TYPE_COL].str.lower().isin(['0', 'raw'])]
+    # Force Type to string and remove rows where it's '0' or 'raw'
+    df[TYPE_COL] = df[TYPE_COL].astype(str).str.strip()
+    df = df[~df[TYPE_COL].str.lower().isin(['0', 'raw', '0.0'])]
 
     # --- 5. TOP-LEVEL METRICS ---
     total_apps = len(df)
@@ -61,14 +69,14 @@ if df is not None:
     stats['Duplicates'] = stats['count'] - stats['nunique']
     stats.columns = [TYPE_COL, "Total Apps", "Unique Apps", "Duplicate Apps"]
 
-    # hide_index=True removes the 0, 1, 2, 3... numbers from the side
+    # hide_index=True removes the confusing 0, 1, 2, 3... sequence
     st.dataframe(stats.sort_values(by=TYPE_COL), hide_index=True, use_container_width=True)
 
-    # --- 7. DETAILED INSPECTION (Application Number and Title only) ---
+    # --- 7. DETAILED INSPECTION (Limited Columns) ---
     st.divider()
     st.subheader("🔍 Inspection: Duplicate Application Details")
 
-    # Filter for duplicates (keep=False shows all copies of the duplicate)
+    # Find all instances of rows that share an Application Number
     dupe_filter = df[df.duplicated(subset=[ID_COL], keep=False)]
 
     category_list = ["All Types"] + sorted(list(df[TYPE_COL].unique()))
@@ -80,16 +88,20 @@ if df is not None:
         display_df = dupe_filter
 
     if not display_df.empty:
-        st.write(f"Showing duplicate records:")
+        st.write(f"Showing duplicate records (IDs and Titles only):")
         
-        # Strictly show only the Application Number and Title columns
-        final_view = display_df[[ID_COL, TITLE_COL]].sort_values(by=ID_COL)
+        # Only show the two columns requested
+        # Handling the case where Title might be missing
+        cols_to_show = [ID_COL]
+        if TITLE_COL:
+            cols_to_show.append(TITLE_COL)
+            
+        final_view = display_df[cols_to_show].sort_values(by=ID_COL)
         
-        # hide_index=True removes the confusing row numbers
         st.dataframe(final_view, hide_index=True, use_container_width=True)
     else:
-        st.success("No duplicates found for this selection!")
+        st.success("✅ No duplicates found for this selection!")
 
 else:
-    st.error(f"❌ File not found: Could not find '{FILENAME}' in your repository.")
-    st.info("Ensure you have pushed 'data.csv' via GitHub Desktop.")
+    st.error(f"❌ Could not find '{FILENAME}'")
+    st.info("Check GitHub Desktop to ensure the file is synced.")
