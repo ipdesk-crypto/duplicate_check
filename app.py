@@ -67,7 +67,7 @@ if df is not None:
 
     stats = df.groupby(TYPE_COL)[ID_COL].agg(['count', 'nunique']).reset_index()
     stats['Duplicates'] = stats['count'] - stats['nunique']
-    stats.columns = [TYPE_COL, "Total Apps", "Unique Apps", "Duplicate Apps"]
+    stats.columns = [TYPE_COL, "Total Applications in Database", "Total Unique Applications", "Total Duplicate Applications"]
 
     # hide_index=True removes the confusing 0, 1, 2, 3... sequence
     st.dataframe(stats.sort_values(by=TYPE_COL), hide_index=True, use_container_width=True)
@@ -88,7 +88,7 @@ if df is not None:
         display_df = dupe_filter
 
     if not display_df.empty:
-        st.write(f"Showing duplicate records (IDs and Titles only):")
+        st.write(f"Showing duplicate records:")
         
         # Only show the two columns requested
         # Handling the case where Title might be missing
