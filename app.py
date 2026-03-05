@@ -102,6 +102,41 @@ if df is not None:
     else:
         st.success("✅ No duplicates found for this selection!")
 
+    # --- 8. UNIQUE APPLICATIONS DATA EXPORT ---
+    st.divider()
+    st.subheader("🌟 Full Data: Unique Applications")
+    st.markdown("This section isolates **unique** applications (removing duplicate rows). All original CSV columns are visible. Use the download button below the table to export this directly to Google Sheets.")
+
+    # Create a dataframe of only unique applications by dropping duplicate Application Numbers
+    unique_df = df.drop_duplicates(subset=[ID_COL], keep='first')
+
+    # Re-use the category list but use a distinct key for this selectbox so it doesn't clash with Section 7
+    selected_cat_unique = st.selectbox("Filter unique applications by Type:", category_list, key="unique_filter")
+
+    if selected_cat_unique != "All Types":
+        display_unique_df = unique_df[unique_df[TYPE_COL] == selected_cat_unique]
+    else:
+        display_unique_df = unique_df
+
+    if not display_unique_df.empty:
+        # Display the full dataframe (all columns)
+        st.dataframe(display_unique_df, hide_index=True, use_container_width=True)
+        
+        # Create CSV download button for Google Sheets
+        csv_data = display_unique_df.to_csv(index=False).encode('utf-8')
+        
+        # Clean up the filename so it formats nicely
+        safe_filename = selected_cat_unique.replace(" ", "_").replace("/", "-")
+        
+        st.download_button(
+            label="⬇️ Download to CSV (For Google Sheets)",
+            data=csv_data,
+            file_name=f"Unique_Applications_{safe_filename}.csv",
+            mime="text/csv",
+        )
+    else:
+        st.info("No unique records found for this selection.")
+
 else:
     st.error(f"❌ Could not find '{FILENAME}'")
     st.info("Check GitHub Desktop to ensure the file is synced.")
